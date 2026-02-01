@@ -207,9 +207,9 @@ useEffect(() => {
 <h1 className='text-white font-semibold text-[19px]'>History</h1>
 
 <div className='w-full h-[400px] gap-[20px] overflow-y-auto flex flex-col truncate'>
-  {userData.history?.map((his)=>(
-    <div className='text-gray-200 text-[18px] w-full h-[30px]  '>{his}</div>
-  ))}
+  {userData.history?.map((his, index) => (
+    <div key={index} className='text-gray-200 text-[18px] w-full h-[30px]'>{his}</div>
+))}
 
 </div>
 
