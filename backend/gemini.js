@@ -1,8 +1,32 @@
 import axios from "axios"
-const geminiResponse=async (command,assistantName,userName)=>{
-try {
-    const apiUrl=process.env.GEMINI_API_URL
-    const prompt = `You are a virtual assistant named ${assistantName} created by ${userName}. 
+
+// Utility function for delay
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Simple in-memory rate limiter
+const rateLimiter = {
+    lastRequestTime: 0,
+    minInterval: 1000, // Minimum 1 second between requests
+    
+    async waitIfNeeded() {
+        const now = Date.now();
+        const timeSinceLastRequest = now - this.lastRequestTime;
+        
+        if (timeSinceLastRequest < this.minInterval) {
+            await delay(this.minInterval - timeSinceLastRequest);
+        }
+        
+        this.lastRequestTime = Date.now();
+    }
+};
+
+const geminiResponse = async (command, assistantName, userName, retries = 3) => {
+    try {
+        // Wait if we're sending requests too quickly
+        await rateLimiter.waitIfNeeded();
+        
+        const apiUrl = process.env.GEMINI_API_URL
+        const prompt = `You are a virtual assistant named ${assistantName} created by ${userName}. 
 You are not Google. You will now behave like a voice-enabled assistant.
 
 Your task is to understand the user's natural language input and respond with a JSON object like this:
@@ -42,19 +66,32 @@ Important:
 now your userInput- ${command}
 `;
 
-
-
-
-
-    const result=await axios.post(apiUrl,{
-    "contents": [{
-    "parts":[{"text": prompt}]
-    }]
-    })
-return result.data.candidates[0].content.parts[0].text
-} catch (error) {
-    console.log(error)
-}
+        const result = await axios.post(apiUrl, {
+            "contents": [{
+                "parts": [{ "text": prompt }]
+            }]
+        })
+        
+        return result.data.candidates[0].content.parts[0].text
+        
+    } catch (error) {
+        // Handle 429 Rate Limit Error
+        if (error.response?.status === 429 && retries > 0) {
+            const waitTime = Math.pow(2, 4 - retries) * 1000; // Exponential backoff: 2s, 4s, 8s
+            console.log(`Rate limited (429). Retrying in ${waitTime/1000} seconds... (${retries} retries left)`);
+            await delay(waitTime);
+            return geminiResponse(command, assistantName, userName, retries - 1);
+        }
+        
+        // Handle other errors
+        if (error.response?.status === 429) {
+            console.log("Gemini API Error: Rate limit exceeded. Please try again later.");
+            throw new Error("RATE_LIMIT_EXCEEDED");
+        }
+        
+        console.log("Gemini API Error:", error.message);
+        throw error;
+    }
 }
 
 export default geminiResponse
